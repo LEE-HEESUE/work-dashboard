@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>조직별 근무현황 대시보드</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .file-upload-area {
+            transition: all 0.3s ease;
+        }
+        .file-upload-area:hover {
+            background-color: #f8fafc;
+            border-color: #3b82f6;
+        }
+        .filter-checkbox {
+            transition: all 0.2s ease;
+        }
+        .filter-checkbox:hover {
+            background-color: #f1f5f9;
+        }
+        .table-row:hover {
+            background-color: #f8fafc;
+        }
+        .chart-container {
+            position: relative;
+            height: 280px;
+        }
+    </style>
+</head>
+<body class="min-h-screen bg-gray-50">
+    <div class="max-w-7xl mx-auto p-6">
+        <!-- 헤더 -->
+        <div class="mb-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h1 class="text-3xl font-bold text-gray-900 mb-2">조직별 근무현황 대시보드</h1>
+                    <p class="text-gray-600">주차별 근무현황을 확인하고 분석하세요</p>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <span id="userModeIndicator" class="text-sm px-3 py-1 rounded-full bg-gray-100 text-gray-600">
+                        읽기 전용 모드
+                    </span>
+                    <button id="adminToggle" class="text-sm px-3 py-1 rounded-lg bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors">
+                        <i data-lucide="settings" class="mr-1" size="14"></i>
+                        관리자 설정
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 관리자 설정 모달 -->
+        <div id="adminModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" style="display: none;">
+            <div class="bg-white rounded-lg p-6 w-96 max-w-90vw">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                    <i data-lucide="key" class="mr-2 text-blue-600" size="20"></i>
+                    관리자 인증
+                </h3>
+                
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">GitHub Username</label>
+                        <input 
+                            type="text" 
+                            id="githubUsername"
+                            class="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                            placeholder="your-github-username"
+                        />
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Repository Name</label>
+                        <input 
+                            type="text" 
+                            id="githubRepo"
+                            class="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                            placeholder="work-dashboard"
+                        />
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Personal Access Token</label>
+                        <input 
+                            type="password" 
+                            id="githubToken"
+                            class="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                            placeholder="ghp_xxxxxxxxxxxxxx"
+                        />
+                        <p class="text-xs text-gray-500 mt-1">
+                            <a href="https://github.com/settings/tokens" target="_blank" class="text-blue-600 hover:underline">
+                                GitHub에서 토큰 생성하기
+                            </a>
+                        </p>
+                    </div>
+                </div>
+                
+                <div class="flex justify-end space-x-3 mt-6">
+                    <button id="cancelAdmin" class="px-4 py-2 text-gray-600 hover:text-gray-800">
+                        취소
+                    </button>
+                    <button id="saveAdmin" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                        저장
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 파일 업로드 및 주차 선택 -->
+        <div class="mb-6 bg-white p-6 rounded-lg shadow">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- 파일 업로드 -->
+                <div>
+                    <h3 class="text-lg font-semibold text-gray-900 mb-3 flex items-center">
+                        <i data-lucide="upload" class="mr-2" size="20"></i>
+                        새 주차 데이터 업로드
+                    </h3>
+                    <div class="file-upload-area border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
+                        <input type="file" id="fileInput" accept=".xlsx,.xls" class="hidden">
+                        <label for="fileInput" class="cursor-pointer">
+                            <div class="text-gray-400 mb-2">
+                                <i data-lucide="upload" class="mx-auto" size="32"></i>
+                            </div>
+                            <div class="text-sm text-gray-600">클릭하여 엑셀 파일 업로드</div>
+                            <div class="text-xs text-gray-500 mt-1">또는 파일을 여기로 드래그하세요</div>
+                        </label>
+                    </div>
+                    <p class="text-sm text-gray-500 mt-2">
+                        엑셀 파일을 업로드하면 새로운 주차 데이터로 추가되고 브라우저에 자동 저장됩니다.
+                    </p>
+                </div>
+
+                <!-- 주차 선택 -->
+                <div id="weekSelectorContainer" style="display: none;">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-3 flex items-center">
+                        <i data-lucide="calendar" class="mr-2" size="20"></i>
+                        주차 선택
+                    </h3>
+                    
+                    <input 
+                        type="text" 
+                        id="weekSearch"
+                        placeholder="주차 검색..." 
+                        class="w-full p-3 mb-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                    />
+                    
+                    <div id="weekOptions" class="border border-gray-300 rounded-lg p-2 max-h-48 overflow-y-auto bg-white">
+                        <!-- 주차 목록이 동적으로 생성됩니다 -->
+                    </div>
+                    
+                    <div id="selectedWeekInfo" class="mt-2 p-3 bg-blue-50 rounded-lg" style="display: none;">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-sm font-medium text-blue-900">선택된 주차:</span>
+                            <span id="selectedWeekDisplay" class="text-sm text-blue-700 font-medium"></span>
+                        </div>
+                        <div class="flex justify-end">
+                            <button 
+                                id="deleteSelectedWeek" 
+                                class="px-3 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors flex items-center"
+                                title="선택된 주차 데이터를 삭제합니다"
+                            >
+                                <i data-lucide="trash-2" class="mr-1" size="12"></i>
+                                삭제
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <p class="text-sm text-gray-500 mt-2" id="weekCount">
+                        데이터가 없습니다.
+                    </p>
+
+                </div>
+            </div>
+        </div>
+
+        <!-- 에러 메시지 -->
+        <div id="errorMessage" class="mb-6 bg-red-50 border border-red-200 rounded-lg p-4 hidden">
+            <div class="flex items-center">
+                <div class="text-red-600 mr-2">⚠️</div>
+                <p class="text-red-700" id="errorText"></p>
+            </div>
+        </div>
+
+        <!-- 로딩 스피너 -->
+        <div id="loadingSpinner" class="flex items-center justify-center min-h-64 hidden">
+            <div class="text-center">
+                <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                <p class="text-gray-600">데이터를 불러오는 중...</p>
+            </div>
+        </div>
+
+        <!-- 대시보드 콘텐츠 -->
+        <div id="dashboardContent" style="display: none;">
+            <!-- 필터 섹션 -->
+            <div class="mb-6 bg-white p-4 rounded-lg shadow">
+                <div class="flex items-center justify-between mb-3">
+                    <h2 class="text-lg font-semibold text-gray-900 flex items-center">
+                        <i data-lucide="filter" class="mr-2" size="20"></i>
+                        조직 필터
+                    </h2>
+                    <button id="clearFilters" class="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
+                        필터 초기화
+                    </button>
+                </div>
+
+                <div id="filtersContainer" class="grid grid-cols-5 gap-3">
+                    <!-- 필터들이 동적으로 생성됩니다 -->
+                </div>
+            </div>
+
+            <!-- 통계 카드 -->
+            <div class="grid grid-cols-3 gap-6 mb-6" id="statisticsCards">
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <div class="flex items-center">
+                        <i data-lucide="users" class="text-blue-600" size="20"></i>
+                        <div class="ml-3">
+                            <p class="text-sm font-medium text-gray-600">총 인원수</p>
+                            <p class="text-xl font-bold text-gray-900" id="totalCount">0명</p>
+                            <p class="text-xs text-gray-500">임원 제외</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <div class="flex items-center">
+                        <i data-lucide="clock" class="text-green-600" size="20"></i>
+                        <div class="ml-3">
+                            <p class="text-sm font-medium text-gray-600">주간 평균 근무시간</p>
+                            <p class="text-base font-bold text-gray-900" id="avgWorkRegular">정규: 00시간 00분</p>
+                            <p class="text-base font-bold text-gray-900" id="avgWorkContract">계약: 00시간 00분</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <div class="flex items-center">
+                        <i data-lucide="trending-up" class="text-orange-600" size="20"></i>
+                        <div class="ml-3">
+                            <p class="text-sm font-medium text-gray-600">주간 평균 초과근무</p>
+                            <p class="text-base font-bold text-gray-900" id="avgOvertimeRegular">정규: 00시간 00분</p>
+                            <p class="text-base font-bold text-gray-900" id="avgOvertimeContract">계약: 00시간 00분</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 차트 섹션 -->
+            <div class="grid grid-cols-2 gap-6 mb-8">
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-3">주간 평균 근무시간</h3>
+                    <div class="chart-container">
+                        <canvas id="workTimeChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-3">주간 평균 초과근무시간</h3>
+                    <div class="chart-container">
+                        <canvas id="overtimeChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 정규직 초과근무 테이블 -->
+            <div id="regularOvertimeSection" class="bg-white rounded-lg shadow mb-8" style="display: none;">
+                <div class="p-6 border-b border-gray-200">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h3 class="text-xl font-semibold text-gray-900 flex items-center">
+                                <i data-lucide="alert-triangle" class="mr-2 text-red-500" size="20"></i>
+                                [정규직] 초과 근무가 많은 편이에요!
+                            </h3>
+                            <p class="text-sm text-gray-500 mt-1" id="regularOvertimeCountText">
+                                주간 초과근무 10시간 이상 - 총 0명
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="overflow-auto" style="max-height: 400px;">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50 sticky top-0">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none" onclick="sortOvertimeTable('regular', '사번')">
+                                    사번 <span id="sort-regular-사번"></span>
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none" onclick="sortOvertimeTable('regular', '이름')">
+                                    이름 <span id="sort-regular-이름"></span>
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24 max-w-24 cursor-pointer hover:bg-gray-100 select-none" onclick="sortOvertimeTable('regular', '소속1')">
+                                    소속1 <span id="sort-regular-소속1"></span>
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24 max-w-24 cursor-pointer hover:bg-gray-100 select-none" onclick="sortOvertimeTable('regular', '소속2')">
+                                    소속2 <span id="sort-regular-소속2"></span>
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24 max-w-24 cursor-pointer hover:bg-gray-100 select-none" onclick="sortOvertimeTable('regular', '소속3')">
+                                    소속3 <span id="sort-regular-소속3"></span>
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24 max-w-24 cursor-pointer hover:bg-gray-100 select-none" onclick="sortOvertimeTable('regular', '트라이브')">
+                                    트라이브 <span id="sort-regular-트라이브"></span>
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24 max-w-24 cursor-pointer hover:bg-gray-100 select-none" onclick="sortOvertimeTable('regular', '소속4')">
+                                    소속4 <span id="sort-regular-소속4"></span>
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none" onclick="sortOvertimeTable('regular', '고용구분')">
+                                    고용구분 <span id="sort-regular-고용구분"></span>
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none" onclick="sortOvertimeTable('regular', '일평균근무시간')">
+                                    일평균근무시간 <span id="sort-regular-일평균근무시간"></span>
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none" onclick="sortOvertimeTable('regular', '주간총근무시간')">
+                                    주간총근무시간 <span id="sort-regular-주간총근무시간"></span>
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none" onclick="sortOvertimeTable('regular', '주간초과근무시간')">
+                                    주간초과근무시간 <span id="sort-regular-주간초과근무시간"></span>
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody id="regularOvertimeTableBody" class="bg-white divide-y divide-gray-200">
+                            <!-- 정규직 초과근무 데이터가 동적으로 생성됩니다 -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="p-4 bg-gray-50 border-t text-center text-sm text-gray-600" id="regularOvertimeFooter">
+                    주간 초과근무 10시간 이상인 정규직 직원 데이터를 표시하고 있습니다.
+                </div>
+            </div>
+
+            <!-- 계약직 초과근무 테이블 -->
+            <div id="contractOvertimeSection" class="bg-white rounded-lg shadow mb-8" style="display: none;">
+                <div class="p-6 border-b border-gray-200">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h3 class="text-xl font-semibold text-gray-900 flex items-center">
+                                <i data-lucide="clock" class="mr-2 text-orange-500" size="20"></i>
+                                [계약직] 초과근무 확인이 필요해요!
+                            </h3>
+                            <p class="text-sm text-gray-500 mt-1" id="contractOvertimeCountText">
+                                주간 초과근무 3시간 이상 - 총 0명
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="overflow-auto" style="max-height: 400px;">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50 sticky top-0">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none" onclick="sortOvertimeTable('contract', '사번')">
+                                    사번 <span id="sort-contract-사번"></span>
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none" onclick="sortOvertimeTable('contract', '이름')">
+                                    이름 <span id="sort-contract-이름"></span>
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24 max-w-24 cursor-pointer hover:bg-gray-100 select-none" onclick="sortOvertimeTable('contract', '소속1')">
+                                    소속1 <span id="sort-contract-소속1"></span>
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24 max-w-24 cursor-pointer hover:bg-gray-100 select-none" onclick="sortOvertimeTable('contract', '소속2')">
+                                    소속2 <span id="sort-contract-소속2"></span>
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24 max-w-24 cursor-pointer hover:bg-gray-100 select-none" onclick="sortOvertimeTable('contract', '소속3')">
+                                    소속3 <span id="sort-contract-소속3"></span>
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24 max-w-24 cursor-pointer hover:bg-gray-100 select-none" onclick="sortOvertimeTable('contract', '트라이브')">
+                                    트라이브 <span id="sort-contract-트라이브"></span>
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24 max-w-24 cursor-pointer hover:bg-gray-100 select-none" onclick="sortOvertimeTable('contract', '소속4')">
+                                    소속4 <span id="sort-contract-소속4"></span>
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none" onclick="sortOvertimeTable('contract', '고용구분')">
+                                    고용구분 <span id="sort-contract-고용구분"></span>
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none" onclick="sortOvertimeTable('contract', '일평균근무시간')">
+                                    일평균근무시간 <span id="sort-contract-일평균근무시간"></span>
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none" onclick="sortOvertimeTable('contract', '주간총근무시간')">
+                                    주간총근무시간 <span id="sort-contract-주간총근무시간"></span>
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none" onclick="sortOvertimeTable('contract', '주간초과근무시간')">
+                                    주간초과근무시간 <span id="sort-contract-주간초과근무시간"></span>
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody id="contractOvertimeTableBody" class="bg-white divide-y divide-gray-200">
+                            <!-- 계약직 초과근무 데이터가 동적으로 생성됩니다 -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="p-4 bg-gray-50 border-t text-center text-sm text-gray-600" id="contractOvertimeFooter">
+                    주간 초과근무 3시간 이상인 계약직 직원 데이터를 표시하고 있습니다.
+                </div>
+            </div>
+
+            <!-- 근무 미달 대상자 리스트 섹션 -->
+            <div id="shortageSection" class="bg-white rounded-lg shadow p-6 mb-8" style="display: none;">
+                <div class="mb-6">
+                    <h2 class="text-xl font-bold text-gray-800 mb-2">근무 미달 대상자</h2>
+                    <p class="text-sm text-gray-600">알럿 대상자 목록 (상단 조직 필터 적용)</p>
+                </div>
+
+                <!-- 탭 컨테이너 -->
+                <div class="mb-4">
+                    <div class="border-b border-gray-200">
+                        <nav class="-mb-px flex space-x-8">
+                            <button 
+                                class="shortage-tab py-2 px-1 border-b-2 font-medium text-sm whitespace-nowrap"
+                                data-tab="daily"
+                                data-sheet="수정요청리스트(일근무)"
+                            >
+                                일 근무 미달
+                                <span class="shortage-count ml-2 bg-red-100 text-red-600 px-2 py-0.5 rounded-full text-xs" id="dailyCount">0</span>
+                            </button>
+                            <button 
+                                class="shortage-tab py-2 px-1 border-b-2 font-medium text-sm whitespace-nowrap"
+                                data-tab="weekly"
+                                data-sheet="수정요청리스트(주근무)"
+                            >
+                                주 근무 미달
+                                <span class="shortage-count ml-2 bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full text-xs" id="weeklyCount">0</span>
+                            </button>
+                            <button 
+                                class="shortage-tab py-2 px-1 border-b-2 font-medium text-sm whitespace-nowrap"
+                                data-tab="coretime"
+                                data-sheet="수정요청리스트(코어타임)"
+                            >
+                                코어타임 미준수
+                                <span class="shortage-count ml-2 bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full text-xs" id="coretimeCount">0</span>
+                            </button>
+                        </nav>
+                    </div>
+                </div>
+
+                <!-- 각 탭 컨텐츠 -->
+                <div id="shortageTabContent">
+                    <!-- 일 근무 미달 탭 -->
+                    <div class="shortage-tab-content" data-tab="daily">
+                        <div class="overflow-auto" style="max-height: 400px;">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50 sticky top-0">
+                                    <tr id="dailyTableHeader">
+                                        <!-- 동적으로 생성 -->
+                                    </tr>
+                                </thead>
+                                <tbody id="dailyTableBody" class="bg-white divide-y divide-gray-200">
+                                    <!-- 동적으로 생성 -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- 주 근무 미달 탭 -->
+                    <div class="shortage-tab-content" data-tab="weekly" style="display: none;">
+                        <div class="overflow-auto" style="max-height: 400px;">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50 sticky top-0">
+                                    <tr id="weeklyTableHeader">
+                                        <!-- 동적으로 생성 -->
+                                    </tr>
+                                </thead>
+                                <tbody id="weeklyTableBody" class="bg-white divide-y divide-gray-200">
+                                    <!-- 동적으로 생성 -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- 코어타임 미준수 탭 -->
+                    <div class="shortage-tab-content" data-tab="coretime" style="display: none;">
+                        <div class="overflow-auto" style="max-height: 400px;">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50 sticky top-0">
+                                    <tr id="coretimeTableHeader">
+                                        <!-- 동적으로 생성 -->
+                                    </tr>
+                                </thead>
+                                <tbody id="coretimeTableBody" class="bg-white divide-y divide-gray-200">
+                                    <!-- 동적으로 생성 -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 빈 상태 메시지 -->
+                <div id="shortageEmptyMessage" class="text-center py-8 text-gray-500" style="display: none;">
+                    <p>해당하는 근무 미달 대상자가 없습니다.</p>
+                </div>
+            </div>
+
+            <!-- 직원별 근무 기록 -->
+            <div class="bg-white rounded-lg shadow mb-8">
+                <div class="p-6 border-b border-gray-200">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h3 class="text-xl font-semibold text-gray-900">직원별 근무 기록</h3>
+                            <p class="text-sm text-gray-500 mt-1" id="employeeCountText">
+                                총 0명
+                            </p>
+                        </div>
+
+                        <div class="relative">
+                            <i data-lucide="search" class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size="16"></i>
+                            <input
+                                type="text"
+                                id="employeeSearch"
+                                placeholder="이름 검색..."
+                                class="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                            />
+                        </div>
+                    </div>
+
+                    <div id="employeeFilters" class="grid grid-cols-2 md:grid-cols-6 gap-2">
+                        <!-- 직원 필터들이 동적으로 생성됩니다 -->
+                    </div>
+                    
+                    <!-- 직원 필터 초기화 버튼 -->
+                    <div class="mt-3 flex justify-end">
+                        <button id="clearEmployeeFilters" class="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
+                            직원 필터 초기화
+                        </button>
+                    </div>
+                </div>
+
+                <div class="overflow-auto" style="max-height: 480px;">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50 sticky top-0">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none" onclick="sortEmployeeTable('사번')">
+                                    사번 <span id="sort-사번"></span>
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none" onclick="sortEmployeeTable('이름')">
+                                    이름 <span id="sort-이름"></span>
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24 max-w-24 cursor-pointer hover:bg-gray-100 select-none" onclick="sortEmployeeTable('소속1')">
+                                    소속1 <span id="sort-소속1"></span>
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24 max-w-24 cursor-pointer hover:bg-gray-100 select-none" onclick="sortEmployeeTable('소속2')">
+                                    소속2 <span id="sort-소속2"></span>
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24 max-w-24 cursor-pointer hover:bg-gray-100 select-none" onclick="sortEmployeeTable('소속3')">
+                                    소속3 <span id="sort-소속3"></span>
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24 max-w-24 cursor-pointer hover:bg-gray-100 select-none" onclick="sortEmployeeTable('트라이브')">
+                                    트라이브 <span id="sort-트라이브"></span>
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24 max-w-24 cursor-pointer hover:bg-gray-100 select-none" onclick="sortEmployeeTable('소속4')">
+                                    소속4 <span id="sort-소속4"></span>
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none" onclick="sortEmployeeTable('고용구분')">
+                                    고용구분 <span id="sort-고용구분"></span>
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none" onclick="sortEmployeeTable('일평균근무시간')">
+                                    일평균근무시간 <span id="sort-일평균근무시간"></span>
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none" onclick="sortEmployeeTable('주간총근무시간')">
+                                    주간총근무시간 <span id="sort-주간총근무시간"></span>
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none" onclick="sortEmployeeTable('주간초과근무시간')">
+                                    주간초과근무시간 <span id="sort-주간초과근무시간"></span>
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody id="employeeTableBody" class="bg-white divide-y divide-gray-200">
+                            <!-- 직원 데이터가 동적으로 생성됩니다 -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="p-4 bg-gray-50 border-t text-center text-sm text-gray-600" id="tableFooter">
+                    총 0명의 직원 데이터를 표시하고 있습니다.
+                </div>
+            </div>
+        </div>
+
+        <!-- 초기 상태 메시지 -->
+        <div id="welcomeMessage" class="bg-white rounded-lg shadow p-12 text-center">
+            <div class="text-gray-400 mb-4">
+                <i data-lucide="upload" class="mx-auto" size="48"></i>
+            </div>
+            <h3 class="text-lg font-semibold text-gray-900 mb-2">주차별 근무 데이터를 업로드하세요</h3>
+            <p class="text-gray-600 mb-6">
+                엑셀 파일을 업로드하면 주차별 근무현황을 분석할 수 있습니다.
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-500 mb-6">
+                <div class="p-4 bg-gray-50 rounded-lg">
+                    <div class="font-medium text-gray-700 mb-2">📊 주차별 분석</div>
+                    <p>여러 주차 데이터를 업로드하여 주차별 근무현황을 비교하고 분석할 수 있습니다.</p>
+                </div>
+                <div class="p-4 bg-gray-50 rounded-lg">
+                    <div class="font-medium text-gray-700 mb-2">🔍 상세 필터링</div>
+                    <p>조직별, 직원별로 세부적인 필터링과 검색 기능을 제공합니다.</p>
+                </div>
+                <div class="p-4 bg-gray-50 rounded-lg">
+                    <div class="font-medium text-gray-700 mb-2">📈 시각적 차트</div>
+                    <p>근무시간과 초과근무를 한눈에 볼 수 있는 차트를 제공합니다.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="dashboard.js"></script>
+    <script>
+        // Lucide 아이콘 초기화
+        lucide.createIcons();
+    </script>
+</body>
+</html>
