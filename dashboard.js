@@ -12,6 +12,12 @@ let githubConfig = {
     repo: '',
     token: ''
 };
+
+// 공개 Repository 정보 (일반 사용자도 데이터를 볼 수 있도록)
+const PUBLIC_GITHUB_CONFIG = {
+    username: 'LEE-HEESUE', // 당신의 GitHub 사용자명
+    repo: 'work-dashboard'
+};
 let organizations = {
     소속1: [], 소속2: [], 소속3: [], 트라이브: [], 소속4: []
 };
@@ -339,15 +345,15 @@ async function updateWeekListFile() {
     }
 }
 
-// GitHub에서 데이터 로드
-async function loadFromGithub() {
+// GitHub에서 데이터 로드 (일반 사용자도 접근 가능)
+async function loadFromGithubPublic(username, repo) {
     try {
         // 주차 목록 가져오기
-        const weekListResponse = await fetch(`https://raw.githubusercontent.com/${githubConfig.username}/${githubConfig.repo}/main/data/week_list.json`);
+        const weekListResponse = await fetch(`https://raw.githubusercontent.com/${username}/${repo}/main/data/week_list.json`);
         
         if (!weekListResponse.ok) {
-            console.log('GitHub에서 데이터를 찾을 수 없습니다. 로컬 데이터를 사용합니다.');
-            return loadFromStorage();
+            console.log('GitHub에서 데이터를 찾을 수 없습니다.');
+            return {};
         }
         
         const weekListData = await weekListResponse.json();
@@ -359,7 +365,7 @@ async function loadFromGithub() {
         for (const week of weeks) {
             try {
                 const fileName = week.replace(/[^a-zA-Z0-9가-힣]/g, '_');
-                const dataResponse = await fetch(`https://raw.githubusercontent.com/${githubConfig.username}/${githubConfig.repo}/main/data/${fileName}.json`);
+                const dataResponse = await fetch(`https://raw.githubusercontent.com/${username}/${repo}/main/data/${fileName}.json`);
                 
                 if (dataResponse.ok) {
                     const weekData = await dataResponse.json();
@@ -379,8 +385,13 @@ async function loadFromGithub() {
         
     } catch (error) {
         console.error('GitHub 데이터 로드 실패:', error);
-        return loadFromStorage();
+        return {};
     }
+}
+
+// GitHub에서 데이터 로드 (관리자용 - 인증 필요)
+async function loadFromGithub() {
+    return loadFromGithubPublic(githubConfig.username, githubConfig.repo);
 }
 
 // 파일 업로드 핸들러
@@ -608,21 +619,30 @@ async function initializeApp() {
     
     let storedData = {};
     
-    // GitHub 설정이 있으면 GitHub에서 데이터 로드 시도
-    if (hasGithubConfig) {
-        try {
-            setLoading(true);
-            storedData = await loadFromGithub();
-            console.log('GitHub에서 데이터를 로드했습니다.');
-        } catch (error) {
-            console.log('GitHub 로드 실패, 로컬 데이터를 사용합니다:', error.message);
+    try {
+        setLoading(true);
+        
+        // 일반 사용자든 관리자든 공개 GitHub에서 데이터 로드 시도
+        if (PUBLIC_GITHUB_CONFIG.username) {
+            console.log('공개 GitHub에서 데이터 로드 시도...');
+            storedData = await loadFromGithubPublic(PUBLIC_GITHUB_CONFIG.username, PUBLIC_GITHUB_CONFIG.repo);
+            
+            if (Object.keys(storedData).length > 0) {
+                console.log('GitHub에서 데이터를 로드했습니다.');
+            } else {
+                console.log('GitHub에 데이터가 없습니다. 로컬 데이터를 확인합니다.');
+                storedData = loadFromStorage();
+            }
+        } else {
+            console.log('GitHub 설정이 없습니다. 로컬 데이터를 사용합니다.');
             storedData = loadFromStorage();
-        } finally {
-            setLoading(false);
         }
-    } else {
-        // GitHub 설정이 없으면 로컬 데이터만 사용
+        
+    } catch (error) {
+        console.log('데이터 로드 실패, 로컬 데이터를 사용합니다:', error.message);
         storedData = loadFromStorage();
+    } finally {
+        setLoading(false);
     }
     
     // 메모리에 로드
